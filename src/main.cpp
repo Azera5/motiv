@@ -24,6 +24,7 @@
 #include <QIODeviceBase>
 
 #include "src/ui/windows/MainWindow.hpp"
+#include "src/ui/windows/MpiAnalysisWindow.hpp"
 #include "src/ui/windows/RecentFilesDialog.hpp"
 
 // Decides wether performance information will be printed
@@ -55,6 +56,9 @@ int main(int argc, char *argv[])
 	parser.addOption(testrunOption);
     parser.addPositionalArgument("file", QCoreApplication::translate("main", "filepath of the .otf2 trace file to open"), "[file]");
 
+    QCommandLineOption modeOption("m", QCoreApplication::translate("main", "Selects the visualisation mode of Motiv.\n0: Default, 1: MPI Communication"), "mode");
+    parser.addOption(modeOption);
+
     parser.process(app);
 
     // Early return if help or version is shown
@@ -78,15 +82,34 @@ int main(int argc, char *argv[])
 	}
 
     RecentFilesDialog recentFilesDialog(&filepath);
-    if(!filepath.isEmpty() || recentFilesDialog.exec() == QDialog::Accepted) {
-        auto mainWindow = new MainWindow(filepath);
-        //std::string motivVersion = MOTIV_VERSION_STRING;
-        QString fullTitle;
-        QTextStream text(&fullTitle);
-        text << "Motiv " MOTIV_VERSION_STRING;
-        mainWindow->setWindowTitle(fullTitle);
-        qInfo() << "motiv ready";
-        mainWindow->show();
+    bool modeValidity;
+    int mode = parser.value(modeOption).toInt(&modeValidity);
+
+    // ATTENTION: MODES CONTROLL MUST BE SWAPED!!! TEMPORARY WORKAROUNT (swap if commentary)
+    if((modeValidity || (!parser.isSet(modeOption))) && (!filepath.isEmpty() || recentFilesDialog.exec() == QDialog::Accepted)) {
+       // if((!parser.isSet(modeOption)) || mode == 0){
+        if (parser.isSet(modeOption) && mode == 1){
+            auto mainWindow = new MainWindow(filepath);
+            //std::string motivVersion = MOTIV_VERSION_STRING;
+            QString fullTitle;
+            QTextStream text(&fullTitle);
+            text << "Motiv " MOTIV_VERSION_STRING;
+            mainWindow->setWindowTitle(fullTitle);
+            qInfo() << "motiv ready";
+            mainWindow->show();
+            }
+        if((!parser.isSet(modeOption)) || mode == 0){ 
+       // if (parser.isSet(modeOption) && mode == 1){
+            auto mainWindow = new MpiAnalysisWindow(filepath);
+            //std::string motivVersion = MOTIV_VERSION_STRING;
+            QString fullTitle;
+            QTextStream text(&fullTitle);
+            text << "Motiv " MOTIV_VERSION_STRING;
+            mainWindow->setWindowTitle(fullTitle);
+            qInfo() << "motiv ready";
+            mainWindow->show();
+
+        }
     } else {
         app.quit();
         return EXIT_SUCCESS;

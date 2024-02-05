@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.19)
 
-project(motiv VERSION 2.1.1 LANGUAGES CXX)
+project(motiv VERSION 2.2.0 LANGUAGES CXX)
 
 set(PROJECT_SOURCE_URL https://github.com/parcio/motiv)
 set(PROJECT_ISSUES_URL ${PROJECT_SOURCE_URL}/issues)
@@ -45,6 +45,7 @@ set(PROJECT_SOURCES
         src/models/communication/NonBlockingReceiveEvent.cpp
         src/models/communication/NonBlockingSendEvent.cpp
         src/models/communication/RequestCancelledEvent.cpp
+        src/models/mpianalysis/Node.cpp
         src/ui/ColorGenerator.cpp
         src/ui/ColorSynchronizer.cpp
         src/ui/widgets/InformationDock.cpp
@@ -55,6 +56,7 @@ set(PROJECT_SOURCES
         src/ui/views/CommunicationIndicator.cpp
         src/ui/views/FlamegraphView.cpp
         src/ui/views/GenericIndicator.cpp
+        src/ui/views/NodeIndicator.cpp
         src/ui/views/SlotIndicator.cpp
         src/ui/views/TimelineView.cpp
         src/ui/views/TraceOverviewTimelineView.cpp   
@@ -71,9 +73,11 @@ set(PROJECT_SOURCES
         src/ui/widgets/infostrategies/InformationDockElementBaseStrategy.cpp
         src/ui/widgets/infostrategies/InformationDockSlotStrategy.cpp
         src/ui/widgets/infostrategies/InformationDockTraceStrategy.cpp
+        src/ui/widgets/mpianalysis/LogicalClock.cpp
         src/ui/windows/FilterPopup.cpp
         src/ui/windows/FlamegraphPopup.cpp
         src/ui/windows/MainWindow.cpp
+        src/ui/windows/MpiAnalysisWindow.cpp
         src/ui/windows/Otf2FileDialog.cpp
         src/ui/windows/RecentFilesDialog.cpp
         src/ui/windows/SearchPopup.cpp

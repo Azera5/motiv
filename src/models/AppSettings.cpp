@@ -113,3 +113,11 @@ void AppSettings::toggleGlobalColorConfig(bool checked)
 bool AppSettings::getuseGlobalColorConfig(){
     return this->useGlobalColorConfig;
 }
+
+void AppSettings::setMode(Mode mode){
+    this->mode = mode;
+}
+
+Mode AppSettings::getMode(){
+    return this->mode;
+}

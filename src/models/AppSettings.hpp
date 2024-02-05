@@ -22,6 +22,13 @@
 #include <QSettings>
 #include <QString>
 
+// ATTENTION: MODES MUST BE SWAPED!!! TEMPORARY WORKAROUNT
+enum Mode{
+    Default = 1,
+    MPI_Analysis = 0
+};
+
+
 /**
  * @brief Singleton holding persistent information.
  * 
@@ -109,6 +116,10 @@ public:
     void clearColorConfig();
 
     bool getuseGlobalColorConfig();
+
+    void setMode(Mode mode);
+
+    Mode getMode();
     
 public: Q_SIGNALS:
     /**
@@ -132,6 +143,7 @@ private:
     QStringList recentlyOpenedFiles_;
     QString colorConfigName_;
     bool useGlobalColorConfig = false;
+    Mode mode = Default;
 };
 
 

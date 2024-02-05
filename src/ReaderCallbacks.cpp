@@ -59,36 +59,44 @@ void ReaderCallbacks::event(const otf2::definition::location &, const otf2::even
 
 
 void ReaderCallbacks::event(const otf2::definition::location &loc, const otf2::event::enter &event) {
-    auto start = event.timestamp() - this->program_start_;
+    if(mode_ == MPI_Analysis && event.region().paradigm() != otf2::common::paradigm_type::mpi){
+        return;
+    }else{
+        auto start = event.timestamp() - this->program_start_;
 
-    Slot::Builder builder{};
-    auto region = new otf2::definition::region(event.region());
-    auto location = new otf2::definition::location(loc);
-    builder.start(start)->location(location)->region(region);
+        Slot::Builder builder{};
+        auto region = new otf2::definition::region(event.region());
+        auto location = new otf2::definition::location(loc);
+        builder.start(start)->location(location)->region(region);
 
-    std::vector<Slot::Builder> *builders;
-    auto buildersIt = this->slotsBuilding.find(location->ref().get());
-    if (buildersIt == this->slotsBuilding.end()) {
-        builders = new std::vector<Slot::Builder>();
-        this->slotsBuilding.insert({location->ref().get(), builders});
-    } else {
-        builders = buildersIt->second;
-    }
+        std::vector<Slot::Builder> *builders;
+        auto buildersIt = this->slotsBuilding.find(location->ref().get());
+        if (buildersIt == this->slotsBuilding.end()) {
+            builders = new std::vector<Slot::Builder>();
+            this->slotsBuilding.insert({location->ref().get(), builders});
+        } else {
+            builders = buildersIt->second;
+        }
 
-    builders->push_back(builder);
+        builders->push_back(builder);
+        }    
 }
 
 void ReaderCallbacks::event(const otf2::definition::location &location, const otf2::event::leave &event) {
-    auto builders = this->slotsBuilding.at(location.ref().get());
+    if(mode_ == MPI_Analysis && event.region().paradigm() != otf2::common::paradigm_type::mpi){
+        return;
+    }else{
+        auto builders = this->slotsBuilding.at(location.ref().get());
 
-    Slot::Builder &builder = builders->back();
+        Slot::Builder &builder = builders->back();
 
-    auto end = event.timestamp() - this->program_start_;
-    builder.end(end);
+        auto end = event.timestamp() - this->program_start_;
+        builder.end(end);
 
-    this->slots_.push_back(new Slot(builder.build()));
+        this->slots_.push_back(new Slot(builder.build()));
 
-    builders->pop_back();
+        builders->pop_back();
+    }
 }
 
 
@@ -141,7 +149,7 @@ void ReaderCallbacks::event(const otf2::definition::location &loc, const otf2::e
     auto comm = new types::communicator(receive.comm());
     auto ev = new BlockingReceiveEvent(relative(receive.timestamp()), location, comm);
 
-     this->communicationEvent<BlockingReceiveEvent>(ev, receive.sender(), pendingReceives, pendingSends);
+    this->communicationEvent<BlockingReceiveEvent>(ev, receive.sender(), pendingReceives, pendingSends);
 }
 
 void ReaderCallbacks::event(const otf2::definition::location &location, const otf2::event::mpi_isend_request &request) {
@@ -155,16 +163,18 @@ void ReaderCallbacks::event(const otf2::definition::location &location, const ot
     builder.start(start);
     builder.receiver(receiver);
 
-    this->uncompletedIsendRequests.insert({request.request_id(), builder});
+    // this->uncompletedIsendRequests.insert({request.request_id(), builder});
+    this->uncompletedIsendRequests[location.ref()].insert({request.request_id(), builder});
 }
 
 void
-ReaderCallbacks::event(const otf2::definition::location &, const otf2::event::mpi_isend_complete &complete) {
-    if (!uncompletedIsendRequests.contains(complete.request_id())) {
+ReaderCallbacks::event(const otf2::definition::location &location, const otf2::event::mpi_isend_complete &complete) {
+    if (!uncompletedIsendRequests[location.ref()].contains(complete.request_id())) {
         throw std::logic_error("Found a mpi_isend_complete event with no matching mpi_isend_request event!");
     }
 
-    auto builderVariant = uncompletedIsendRequests[complete.request_id()];
+    // auto loc = new otf2::definition::location(location); 
+    auto builderVariant = uncompletedIsendRequests[location.ref()][complete.request_id()];
     
     auto builder = get<NonBlockingSendEvent::Builder>(builderVariant);
 
@@ -177,12 +187,13 @@ ReaderCallbacks::event(const otf2::definition::location &, const otf2::event::mp
 }
 
 void
-ReaderCallbacks::event(const otf2::definition::location &, const otf2::event::mpi_ireceive_complete &complete) {
-    if (!uncompletedIrecvRequests.contains(complete.request_id())) {
+ReaderCallbacks::event(const otf2::definition::location &location, const otf2::event::mpi_ireceive_complete &complete) {
+    if (!uncompletedIrecvRequests[location.ref()].contains(complete.request_id())) {
         throw std::logic_error("Found a mpi_ireceive_complete event with no matching mpi_ireceive_request event!");
     }
 
-    auto builderVariant = uncompletedIrecvRequests[complete.request_id()];
+    // auto builderVariant = uncompletedIrecvRequests[complete.request_id()];
+    auto builderVariant = uncompletedIrecvRequests[location.ref()][complete.request_id()];
     auto builder = get<NonBlockingReceiveEvent::Builder>(builderVariant);
 
     auto comm = new types::communicator (complete.comm());
@@ -206,7 +217,7 @@ ReaderCallbacks::event(const otf2::definition::location &location, const otf2::e
     builder.location(loc);
     builder.start(start);
 
-    this->uncompletedIrecvRequests.insert({request.request_id(), builder});
+    this->uncompletedIrecvRequests[location.ref()].insert({request.request_id(), builder});
 }
 
 void ReaderCallbacks::event(const otf2::definition::location &location, const otf2::event::mpi_request_test &test) {

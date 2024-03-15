@@ -242,10 +242,12 @@ ReaderCallbacks::event(const otf2::definition::location &location, const otf2::e
 }
 
 void ReaderCallbacks::event(const otf2::definition::location &location, const otf2::event::mpi_collective_end &anEnd) {
+    using CommGroup = otf2::definition::group<otf2::definition::location, otf2::common::group_type::comm_group>;
+
     if(ongoingCollectiveCommunication == nullptr) {
         ongoingCollectiveCommunication = new CollectiveCommunicationEvent::Builder();
         std::vector<CollectiveCommunicationEvent::Member*> members;
-        auto loc = new otf2::definition::location( location);
+        auto loc = new otf2::definition::location(location);
         auto comm = new types::communicator (anEnd.comm());
         auto operation = anEnd.type();
         auto root = anEnd.root();
@@ -263,13 +265,41 @@ void ReaderCallbacks::event(const otf2::definition::location &location, const ot
     ongoingCollectiveCommunication->members()->push_back(new CollectiveCommunicationEvent::Member(member.build()));
     ongoingCollectiveCommunicationMembers.erase(location.ref().get());
 
-    // If the map is now empty, all ranks have completed the collective operation and the communication event can be build
-    if(ongoingCollectiveCommunicationMembers.empty()){
+    // Check the number of members involved in this collective operation
+    size_t MembersSize = 0;
+    const auto& commVariant = anEnd.comm();
+    auto interComm = std::get_if<otf2::definition::inter_comm>(&commVariant);
+    if (interComm != nullptr) {
+        auto groupA = std::get<CommGroup>(interComm->groupA());
+        auto groupB = std::get<CommGroup>(interComm->groupB());
+        MembersSize = groupA.size()+groupB.size();
+    } else {
+        auto comm = std::get_if<otf2::definition::comm>(&commVariant);
+        if (comm != nullptr) {            
+            auto& group = std::get<CommGroup>(comm->group());
+            MembersSize = group.size();
+        }
+    }
+
+    // If the current number of members equals the actual size of the group,
+    // all ranks have completed the collective operation and the communication event can be build
+    auto currendMembersSize = ongoingCollectiveCommunication->members().get()->size();
+    if(MembersSize == currendMembersSize){ 
         auto event = new CollectiveCommunicationEvent(ongoingCollectiveCommunication->build());
         collectiveCommunications_.push_back(event);
         delete ongoingCollectiveCommunication;
         ongoingCollectiveCommunication = nullptr;
-    }
+     }
+
+    // Old version
+    // // If the map is now empty, all ranks have completed the collective operation and the communication event can be build
+    // if(ongoingCollectiveCommunicationMembers.empty()){
+    //     auto event = new CollectiveCommunicationEvent(ongoingCollectiveCommunication->build());
+    //     collectiveCommunications_.push_back(event);
+    //     delete ongoingCollectiveCommunication;
+    //     ongoingCollectiveCommunication = nullptr;
+    // }
+   
 }
 
 

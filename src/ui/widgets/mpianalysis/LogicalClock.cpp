@@ -1,4 +1,5 @@
 #include <QGraphicsEllipseItem>
+#include <algorithm>
 
 #include "LogicalClock.hpp"
 #include "src/ui/Constants.hpp"
@@ -77,7 +78,8 @@ void LogicalClock::populateScene(QGraphicsScene* scene) {
         scene->addItem(textItem);
     }
 
-    for(const auto& collectivCommunication: pendingCollectives){
+    for(const auto& collectivCommunication: pendingCollectives){        
+        if(!(collectivCommunication.first->getKind() == CommunicationKind::Synchronizing)) continue;
         int x = (std::get<IDX_MAX_NODE_COUNT>(collectivCommunication.second) * X_OFFSET);
         int yStart = std::get<IDX_START_Y>(collectivCommunication.second);
         int yEnd = std::get<IDX_END_Y>(collectivCommunication.second);
@@ -103,10 +105,9 @@ void LogicalClock::drawNodes(std::map<uint64_t, std::vector<std::pair<Node*, boo
     {
     DEBUG_CALL_COUNTER++;
     auto onTimedElementSelected = [this](TimedElement *element) { this->data->setTimeElementSelection(element); };
+   
+    // Begin Iteration at specific location, default = 0
     auto item = nodes_.lower_bound(location_);
-    
-    
-
     for(; item!= nodes_.end(); ++item){
         auto location = item->first;
         if(nodeCountMap.find(location)==nodeCountMap.end()){ 
@@ -117,76 +118,78 @@ void LogicalClock::drawNodes(std::map<uint64_t, std::vector<std::pair<Node*, boo
 
         // Continue node vector iteration at last position 
         for(size_t j = nodeCountMap[location].second; j < item->second.size(); ++j){
-            auto& node = item->second[j];
-            if(node.second) continue;
+            auto& node = item->second[j].first;
+            auto nodeFinishState = item->second[j].second;
+            if(nodeFinishState) continue;
             QColor color = OTHERS_COLOR;
-            
 
-            auto region = QString::fromStdString(node.first->getRegionName().str());            
+            auto region = QString::fromStdString(node->getRegionName().str());            
             auto DEBUG_REGION = region.toStdString();
             if(region.contains("Init") || region.contains("Comm") || region.contains("Group") || region.contains("Finalize")) {
-                node.second = true;
+                nodeFinishState = true;
                 nodeCountMap[location].second++;
                 continue; //workaround
                 }
 
+            if ((region.contains("send", Qt::CaseInsensitive) || region.contains("recv", Qt::CaseInsensitive)) && !(node->hasCommunication())) color = Qt::red;
             int y = (location * Y_OFFSET) - RADIUS;
             int x = (count * X_OFFSET) - RADIUS;
 
             
             // Node is P2P communication
-            if(node.first->hasCommunication()){
+            if(node->hasCommunication()){
                 
                 // Set node color
                 if(region.contains("send", Qt::CaseInsensitive)) color = SEND_COLOR;
                 else color = RECV_COLOR; 
 
                 // Preparing offset for node
-                uint64_t connectedNodeRank = node.first->getConnectedCommunicationRank();
+                uint64_t connectedNodeRank = node->getConnectedCommunicationRank();
                 
                 if(nodeCountMap.find(connectedNodeRank)==nodeCountMap.end()){
                     nodeCountMap[connectedNodeRank].first = 1;
                     nodeCountMap[connectedNodeRank].second = 0;
                 }
                 
-                if(pendingEdges.find(node.first->getCommunication()) == pendingEdges.end()){
+                if(pendingEdges.find(node->getCommunication()) == pendingEdges.end()){
                     // Blocking communication needs a specific x-axis-offset
-                    if(node.first->getCommunicationKind() & CommunicationKind::BlockingPointToPoint) {                        
+                    if(node->getCommunicationKind() & CommunicationKind::BlockingPointToPoint) {                       
                         // node define offset because is start event
-                        if(node.first->getOwnEvent() == node.first->getCommunication()->getStartEvent()) { 
+                        if(node->getOwnEvent() == node->getCommunication()->getStartEvent()) { 
                             nodeCountMap[connectedNodeRank].first = std::max(nodeCountMap[connectedNodeRank].first, (count+1));
                         }                        
                         // Node has to wait for offset from connected node
                         else{
-                            if(!node.first->getConnectedNodes().empty()){
-                                auto matchingNodes = std::make_pair(node.first, node.first->getConnectedNodes()[connectedNodeRank]);
+                            if(!node->getConnectedNodes().empty()){
+                                auto matchingNodes = std::make_pair(node, node->getConnectedNodes()[connectedNodeRank][0]);
                                 drawNodes(nodes_, nodeCountMap, pendingEdges, pendingCollectives, scene, connectedNodeRank, &matchingNodes); 
                             }
                             //TODO WARNUNG PRINTEN
                             else drawNodes(nodes_, nodeCountMap, pendingEdges, pendingCollectives, scene, connectedNodeRank);                            
                         }
-                        if(node.second) continue;
+                        if(nodeFinishState) continue;
 
                         // overwrite x, maybe count has changed!                       
                         x = (count * X_OFFSET) - RADIUS;
                     }
                     
-                    if(pendingEdges.find(node.first->getCommunication()) == pendingEdges.end()) pendingEdges[node.first->getCommunication()] = std::make_tuple(x, y);
+                    if(pendingEdges.find(node->getCommunication()) == pendingEdges.end()) pendingEdges[node->getCommunication()] = std::make_tuple(x, y);
                     // if(region.contains("send",Qt::CaseInsensitive)) nodeCountMap[connectedNodeRank].first = std::max(nodeCountMap[connectedNodeRank].first, (count+1));
                 }
+
                 // Preparing coordinates for edges                
-                // if(node.first->getOwnEvent() == node.first->getCommunication()->getEndEvent() && !(node.second)){
-                uint64_t pendingY = std::get<1>(pendingEdges[node.first->getCommunication()]);
+                // if(node->getOwnEvent() == node->getCommunication()->getEndEvent() && !(nodeFinishState)){
+                uint64_t pendingY = std::get<1>(pendingEdges[node->getCommunication()]);
                 uint64_t pendingLocation = (pendingY + RADIUS)/Y_OFFSET;
                 if(pendingLocation != location || connectedNodeRank == location){
                     x = (nodeCountMap[location].first * X_OFFSET) - RADIUS;
                     
-                    auto nonConstCommunication = const_cast<Communication*>(node.first->getCommunication());                
+                    auto nonConstCommunication = const_cast<Communication*>(node->getCommunication());
                     qreal fromX = x + RADIUS;
                     qreal fromY = y + RADIUS;
 
-                    qreal toX = std::get<0>(pendingEdges[node.first->getCommunication()]) + RADIUS;
-                    qreal toY = std::get<1>(pendingEdges[node.first->getCommunication()]) + RADIUS;
+                    qreal toX = std::get<0>(pendingEdges[node->getCommunication()]) + RADIUS;
+                    qreal toY = std::get<1>(pendingEdges[node->getCommunication()]) + RADIUS;
 
                     if(!region.contains("send", Qt::CaseInsensitive)){
                         fromX = toX;
@@ -202,13 +205,21 @@ void LogicalClock::drawNodes(std::map<uint64_t, std::vector<std::pair<Node*, boo
                     arrow->setOnSelected(onTimedElementSelected);
                     scene->addItem(arrow);                 
                 }
+
+                if(matchingNodes != nullptr){
+                    auto initialNodeRegion = QString::fromStdString(matchingNodes->first->getRegionName().str());
+                    if(initialNodeRegion.contains("wait",Qt::CaseInsensitive)) {
+                        auto initialNodeLocation = matchingNodes->first->getLocation();
+                        nodeCountMap[initialNodeLocation].first = std::max(count+1, nodeCountMap[initialNodeLocation].first);
+                    }
+                }
             }
             
             
             // Node is collective communication 
-            if(node.first->hasCollectiveCommunication()){
+            else if(node->hasCollectiveCommunication()){
                 color = COLLECTIVES_COLOR;          
-                const auto collectiveCommunication = node.first->getCollectiveCommunication();
+                const auto collectiveCommunication = node->getCollectiveCommunication();
                 int lineLength = 2*RADIUS;
                 int yStart = y;
                 int yEnd = yStart + lineLength;
@@ -227,14 +238,21 @@ void LogicalClock::drawNodes(std::map<uint64_t, std::vector<std::pair<Node*, boo
                 //     std::cout << "DEBUG HERE" << std::endl;
                 // }
                 
-                if(node.first->getCommunicationKind()==CommunicationKind::Synchronizing){
-                    if(location_ == std::get<IDX_INITIAL_LOCATION>(pendingCollectives[node.first->getCollectiveCommunication()])){ 
-                                       
-                        for(auto &member: collectiveCommunication->getMembers()){
+                bool isBlockingRoot = ((!region.contains("MPI_I")) && location == collectiveCommunication->getRoot());
+                if(node->getCommunicationKind()==CommunicationKind::Synchronizing || isBlockingRoot ){
+                    if(location_ == std::get<IDX_INITIAL_LOCATION>(pendingCollectives[node->getCollectiveCommunication()]) || isBlockingRoot){
+                        auto members = collectiveCommunication->getMembers();
+
+                        // std::sort(members.begin(), members.end(), 
+                        //     [](const CollectiveCommunicationEvent::Member* a, const CollectiveCommunicationEvent::Member* b) {
+                        //         return a->getStart() < b->getStart();
+                        //     });
+
+                        for(auto &member: members){
                             auto memberLocation = member->getLocation()->ref();
                             if(membersSet.find(memberLocation) == membersSet.end()){
-                                if(!node.first->getConnectedNodes().empty()){                                
-                                    auto matchingNodes = std::make_pair(node.first, node.first->getConnectedNodes()[memberLocation]);
+                                if(!node->getConnectedNodes().empty()){                                
+                                    auto matchingNodes = std::make_pair(node, node->getConnectedNodes()[memberLocation][0]);
                                     drawNodes(nodes_, nodeCountMap, pendingEdges, pendingCollectives, scene, memberLocation, &matchingNodes);
                                 } else drawNodes(nodes_, nodeCountMap, pendingEdges, pendingCollectives, scene, memberLocation);
                             }                                 
@@ -246,21 +264,49 @@ void LogicalClock::drawNodes(std::map<uint64_t, std::vector<std::pair<Node*, boo
                 std::get<IDX_START_Y>(pendingCollectives[collectiveCommunication]) = std::min(yStart, std::get<IDX_START_Y>(pendingCollectives[collectiveCommunication]));                
                 std::get<IDX_END_Y>(pendingCollectives[collectiveCommunication]) = std::max(yEnd, std::get<IDX_END_Y>(pendingCollectives[collectiveCommunication]));             
                                 
-                count = std::get<IDX_MAX_NODE_COUNT>(pendingCollectives[node.first->getCollectiveCommunication()]);
+                count = std::get<IDX_MAX_NODE_COUNT>(pendingCollectives[node->getCollectiveCommunication()]);
                 x = (count * X_OFFSET) - RADIUS;
                 count++;
 
             }
            
+            // else if(region.contains("wait", Qt::CaseInsensitive)){
+            //     for(auto waitingNode : node->getConnectedNodes()[location]){
+            //         auto waitingNodeRegion_ = waitingNode->getRegionName().str();
+            //         std::cout << "[" << waitingNode->getLocation() << "] "<< waitingNodeRegion_ << std::endl;
+            //         // Wait refers to P2P communication
+            //         if(waitingNode->hasCommunication()){
+            //             auto connectedNodeRank = waitingNode->getConnectedCommunicationRank();
+            //             auto connectedNode = waitingNode->getConnectedNodes()[connectedNodeRank][0];                       
+
+            //             // if(waitingNode->getOwnEvent()->getEndTime() > waitingNode->getConnectedEvent()->getEndTime()) {
+            //             // if(waitingNode->getOwnEvent() == waitingNode->getCommunication()->getStartEvent()){
+            //             //     nodeCountMap[connectedNodeRank].first = std::max(nodeCountMap[connectedNodeRank].first, (count+1));
+            //             // } else{
+            //             //     auto matchingNodes = std::make_pair(node, connectedNode);
+            //             //     drawNodes(nodes_, nodeCountMap, pendingEdges, pendingCollectives, scene, connectedNodeRank, &matchingNodes);
+            //             // }
+
+            //             if(waitingNode->getOwnEvent() == waitingNode->getCommunication()->getStartEvent()) {
+            //                 auto matchingNodes = std::make_pair(node, connectedNode);
+            //                 drawNodes(nodes_, nodeCountMap, pendingEdges, pendingCollectives, scene, connectedNodeRank, &matchingNodes);                            
+            //             }
+
+            //             count = std::max(count,nodeCountMap[location].first);
+            //             // overwrite x, maybe count has changed!                       
+            //             x = (count * X_OFFSET) - RADIUS;
+            //         }
+            //     }
+
+            // }
             
-            
-            if(node.second) continue;
+            if(nodeFinishState) continue;
                         
-            auto ellipseItem = new NodeIndicator(node.first->getSlot(), x, y, 2*RADIUS, 2*RADIUS);
+            auto ellipseItem = new NodeIndicator(node->getSlot(), x, y, 2*RADIUS, 2*RADIUS);
             //ellipseItem->setOnDoubleClick(onTimedElementDoubleClicked);
             ellipseItem->setOnSelected(onTimedElementSelected);
 
-            // QBrush brush(node.first->getColor());
+            // QBrush brush(node->getColor());
             QBrush brush(color);
             ellipseItem->setBrush(brush);
 
@@ -268,13 +314,13 @@ void LogicalClock::drawNodes(std::map<uint64_t, std::vector<std::pair<Node*, boo
             ellipseItem->setToolTip(hoverText);
             ellipseItem->setAcceptHoverEvents(true);
 
-            if(node.first->hasCommunication() && (node.first->getCommunicationKind() & CommunicationKind::BlockingPointToPoint)){
-                QPen pen(COLLECTIVES_COLOR);
-                pen.setWidth(2);
+            if(node->hasCommunication() && (node->getCommunicationKind() & CommunicationKind::BlockingPointToPoint)){
+                QPen pen(Qt::red);
+                // pen.setWidth(2);
                 ellipseItem->setPen(pen);
             }
 
-            // if(node.first->hasCommunication() && (node.first->getCommunicationKind() & CommunicationKind::NonBlockingPointToPoint)){
+            // if(node->hasCommunication() && (node->getCommunicationKind() & CommunicationKind::NonBlockingPointToPoint)){
             //     QGraphicsEllipseItem* coverPattern = new QGraphicsEllipseItem(x, y, 2*RADIUS, 2*RADIUS);
             //     QPixmap patternPixmap(16, 16); 
             //     patternPixmap.fill(color); 
@@ -286,22 +332,24 @@ void LogicalClock::drawNodes(std::map<uint64_t, std::vector<std::pair<Node*, boo
             //     coverPattern->setZValue(5);
             // }           
 
-            node.second = true;
+            nodeFinishState = true;
             nodeCountMap[location].second++;
-            if(node.first->hasCollectiveCommunication()){
-                if(!(node.first->getCommunicationKind()==CommunicationKind::Synchronizing)) scene->addItem(ellipseItem);
+            if(node->hasCollectiveCommunication()){
+                if(!(node->getCommunicationKind()==CommunicationKind::Synchronizing)) scene->addItem(ellipseItem);
 
                 if(matchingNodes !=nullptr){
-                    auto initialLocation = std::get<IDX_INITIAL_LOCATION>(pendingCollectives[node.first->getCollectiveCommunication()]);                
-                    if(node.first->getCollectiveCommunication() == matchingNodes->first->getCollectiveCommunication() && initialLocation != location_) return;                    
+                    auto initialLocation = std::get<IDX_INITIAL_LOCATION>(pendingCollectives[node->getCollectiveCommunication()]);
+                    if(matchingNodes->first->hasCollectiveCommunication()){                        
+                        if(node == matchingNodes->second && initialLocation != location_) return;    
+                    }                
                 }
 
             }else{
                 if(matchingNodes !=nullptr){
                     scene->addItem(ellipseItem);
                    
-                    if(node.first == matchingNodes->second && location_ != 0){
-                        // count++;
+                    if(node == matchingNodes->second && location_ != 0){
+                        count++;
                         return;
                     }
                 }else scene->addItem(ellipseItem);

@@ -25,15 +25,21 @@ void Node::setCollectiveCommunication(const CollectiveCommunicationEvent *collec
     this->collectiveCommunication = collectiveCommunication;
 }
 
-void Node::setCollectiveCommunicationMemberRef(const CollectiveCommunicationEvent::Member *member){
-    this->member = member;
+void Node::addConnectedNode(Node* node){
+    // this->connectedNodes[node->getLocation()] = node;
+    this->connectedNodes[node->getLocation()].push_back(node);
 }
 
-void Node::addConnectedNodes(Node* node){
-    this->connectedNodes[node->getLocation()] = node;
-    // this->connectedNodes.push_back(node);
+void Node::addConnectedNode(uint16_t location, std::vector<Node*> nodes){
+    this->connectedNodes[location] = nodes;
 }
 
+ void Node::addConnectedNode(std::vector<Node*> nodes){
+        for(auto node : nodes){
+            if(node!=this) this->connectedNodes[node->getLocation()].push_back(node);
+    }
+
+ }
 
 Slot* Node::getSlot(){
     return slot;
@@ -59,20 +65,13 @@ const CollectiveCommunicationEvent* Node::getCollectiveCommunication(){
     }
 }
 
-const CollectiveCommunicationEvent::Member* Node::getMemberRef(){
-    if(this->hasCollectiveCommunication()) return this->member;
-    else{
-    throw std::runtime_error("No collective communication present");
-    }
-}
-
 CommunicationKind Node::getCommunicationKind(){
     if(this->hasCommunication()) return this->communication->getStartEvent()->getKind();
     else if(this->hasCollectiveCommunication()) return this->collectiveCommunication->getKind();
     else throw std::runtime_error("No communication present");
 }
 
-std::map<uint64_t, Node*>& Node::getConnectedNodes(){
+std::map<uint64_t, std::vector<Node*>>& Node::getConnectedNodes(){
     if(!connectedNodes.empty()) return connectedNodes;
     else throw std::runtime_error("connectedNodes vector is empty");
 }

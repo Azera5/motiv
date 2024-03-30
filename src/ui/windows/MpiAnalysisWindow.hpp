@@ -46,6 +46,7 @@ private: // methods
     void buildNodes();
 
     bool customP2PCommunicationCompare(Communication* a, Communication* b, uint64_t locationKey);
+    bool timeMatching(const CommunicationEvent* event, Slot slot);
     size_t getTypeIndex(otf2::common::collective_type collectiveType);
     size_t getTypeIndex(otf2::common::role_type roleType);
 

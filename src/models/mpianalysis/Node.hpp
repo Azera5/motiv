@@ -25,12 +25,9 @@ bool hasCollectiveCommunication();
 
 void setCommunication(const Communication *communication);
 void setCollectiveCommunication(const CollectiveCommunicationEvent *collectiveCommunication);
-void setCollectiveCommunicationMemberRef(const CollectiveCommunicationEvent::Member *member);
-
 
 const Communication* getCommunication();
 const CollectiveCommunicationEvent* getCollectiveCommunication();
-const CollectiveCommunicationEvent::Member* getMemberRef();
 CommunicationKind getCommunicationKind();
 
 // only for Nodes with P2P communication
@@ -40,12 +37,14 @@ const CommunicationEvent* getConnectedEvent();
 
 
 // Node related functions
-void addConnectedNodes(Node* node);
+void addConnectedNode(Node* node);
+void addConnectedNode(uint16_t location, std::vector<Node*> nodes);
+void addConnectedNode(std::vector<Node*> nodes);
 
-void setColor();
-QColor getColor();
+// void setColor();
+// QColor getColor();
 
-std::map<uint64_t, Node*>& getConnectedNodes();
+std::map<uint64_t, std::vector<Node*>>& getConnectedNodes();
 
 // Custom comparison operator to sort Node objects in ascending order of endTime
 bool operator<(const Node& other) const;
@@ -54,13 +53,12 @@ private: //data
     Slot *slot;
     // QColor color;
 
-    std::map<uint64_t, Node*> connectedNodes;
+    std::map<uint64_t, std::vector<Node*>> connectedNodes;
 
     const Communication *communication = nullptr;
 
     // Exists only for collective communication Nodes
     const CollectiveCommunicationEvent *collectiveCommunication = nullptr;
-    const CollectiveCommunicationEvent::Member *member = nullptr;
 };
 
 #endif //MOTIV_NODE_HPP

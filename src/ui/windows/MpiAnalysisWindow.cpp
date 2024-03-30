@@ -48,6 +48,7 @@
 #include <tuple>
 #include <bitset>
 
+extern bool testRun;
 
 MpiAnalysisWindow::MpiAnalysisWindow(QString filepath) : QMainWindow(nullptr), filepath(std::move(filepath)){
     if (this->filepath.isEmpty()) {
@@ -208,9 +209,9 @@ QString MpiAnalysisWindow::promptFile() {
 void MpiAnalysisWindow::loadTrace() {
 
     QElapsedTimer loadTraceTimer;
-    // if(testRun==true){
-    //     loadTraceTimer.start();
-    // }
+    if(testRun==true){
+        loadTraceTimer.start();
+    }
 
     this->reader = new otf2::reader::reader(this->filepath.toStdString());
 
@@ -230,13 +231,13 @@ void MpiAnalysisWindow::loadTrace() {
     this->data = new TraceDataProxy(trace, this->settings, this);
     this->buildNodes();
 
-    // if(testRun==true){
-    //     std::cout << "%MainWindow::loadTrace()%" << loadTraceTimer.elapsed() << "%ms%";
-    // }
+    if(testRun==true){
+        std::cout << "%MpiAnalysisWindow::loadTrace()%" << loadTraceTimer.elapsed() << "%ms%";
+    }
 }
 
-constexpr size_t IDX_P2P_EVENTS = 0;
-constexpr size_t IDX_COLLECTIVES_EVENTS = 1;
+// constexpr size_t IDX_P2P_EVENTS = 0;
+// constexpr size_t IDX_COLLECTIVES_EVENTS = 1;
 
 constexpr size_t IDX_NODES = 0;
 constexpr size_t IDX_COMMUNICATIONS = 1;
@@ -252,17 +253,24 @@ void MpiAnalysisWindow::buildNodes(){
 
     // Pending Events: Connects Slots with corresponding CommunicationEvents (P2P or collective communication).
     using pendingP2PEvents =  std::tuple<std::vector<Node*>, std::vector<Communication*>>;
-    using pendingCollectivesEvents =  std::tuple<std::vector<Node*>, std::map<uint64_t, std::vector<std::pair<CollectiveCommunicationEvent*, CollectiveCommunicationEvent::Member*>>>>;
-   
-    using pendingEvents = std::tuple<pendingP2PEvents, pendingCollectivesEvents>;
+    // using pendingCollectivesEvents =  std::tuple<std::vector<Node*>, std::map<uint64_t, std::vector<std::pair<CollectiveCommunicationEvent*, CollectiveCommunicationEvent::Member*>>>>;
+    // using pendingCollectivesEvents =  std::tuple<std::vector<Node*>, std::vector<std::pair<CollectiveCommunicationEvent*, CollectiveCommunicationEvent::Member*>>>;
+    
+    using pendingCollectivesEvents =  std::tuple<std::vector<Node*>, std::vector<CollectiveCommunicationEvent*>>;
 
-    // Pending Node to connect with matching Node (e.g sender, receiver), key is their CommunicationEvent    
+    std::map<uint16_t, pendingP2PEvents> pendingP2PMap;
+    std::map<uint16_t, pendingCollectivesEvents> pendingCollectiveMap;
+
+    // Pending non-blocking Nodes awaiting connection with potential subsequent mpi_wait
+    std::map<uint16_t, std::vector<Node*>> pendingNodesForWait;
+    
+    // Pending Node to connect with matching Node (e.g sender, receiver), key is their CommunicationEvent
     std::map<Communication*, Node*> pendingNodesP2P;
     
-    std::map<CollectiveCommunicationEvent*, Node*> pendingNodesCollectives;
-    
-    std::map<int, pendingEvents> pendingMap;
+    // std::map<CollectiveCommunicationEvent*, Node*> pendingNodesCollectives;
+    std::map<CollectiveCommunicationEvent*, std::vector<Node*>> pendingNodesCollectives;
 
+        
     std::unordered_set<otf2::common::role_type> collectiveRoles ={
         otf2::common::role_type::barrier,
         otf2::common::role_type::coll_one2all,
@@ -279,41 +287,62 @@ void MpiAnalysisWindow::buildNodes(){
             auto roleType = slot->region->role();
             auto location = slot->location->ref(); 
 
-            if(roleType == otf2::common::role_type::point2point){
-                    if (pendingMap.find(location) == pendingMap.end()) pendingMap[location] = pendingEvents();
-                    std::get<IDX_NODES>(std::get<IDX_P2P_EVENTS>(pendingMap[location])).push_back(node_);
-            }else 
 
+            // Pending non-blocking nodes awaiting upcoming wait operations
+            if(regionName.contains("MPI_I") && roleType != otf2::common::role_type::function){
+                if(pendingNodesForWait.find(location)==pendingNodesForWait.end()) pendingNodesForWait[location] = std::vector<Node*>();
+                pendingNodesForWait[location].push_back(node_);
+            }
+
+            if(roleType == otf2::common::role_type::point2point){
+                    if (pendingP2PMap.find(location) == pendingP2PMap.end()) pendingP2PMap[location] = pendingP2PEvents();
+                    std::get<IDX_NODES>(pendingP2PMap[location]).push_back(node_);
+
+            }else // Pending nodes with collective communications
             if(collectiveRoles.find(roleType) != collectiveRoles.end()){
-                if (pendingMap.find(location) == pendingMap.end()) pendingMap[location] = pendingEvents();
-                std::get<IDX_NODES>(std::get<IDX_COLLECTIVES_EVENTS>(pendingMap[location])).push_back(node_);
-            }            
+                if (pendingCollectiveMap.find(location) == pendingCollectiveMap.end()) pendingCollectiveMap[location] = pendingCollectivesEvents();
+                std::get<IDX_NODES>(pendingCollectiveMap[location]).push_back(node_);
+            }else 
+            
+            // Connecting wait-nodes with operation nodes
+            if(regionName.contains("wait", Qt::CaseInsensitive)){
+                if(pendingNodesForWait.find(location)==pendingNodesForWait.end() || pendingNodesForWait[location].empty()) {
+                    throw std::runtime_error("Attempted to wait for a non-blocking operation at location " + std::to_string(location) + ", but no preceding non-blocking operation was initiated.");
+                }
+                if(regionName=="MPI_Wait"){
+                    node_->addConnectedNode(pendingNodesForWait[location].front());
+                    pendingNodesForWait[location].erase(pendingNodesForWait[location].begin());
+                }else{
+                    node_->addConnectedNode(location, pendingNodesForWait[location]);
+                    pendingNodesForWait.erase(location);
+                }
+            }
+
             this->nodes[location].push_back(node_);
         }
             
     }
     
     //Pending communications
-    auto allCommunications = data->getFullTrace()->getCommunications();
     for(auto &item: data->getFullTrace()->getCommunications()){
         const auto startEvent = item->getStartEvent();
         const auto endEvent = item->getEndEvent();
         auto startLoc = startEvent->getLocation()->ref();
         auto endLoc = endEvent->getLocation()->ref();
 
-        if (pendingMap.find(startEvent->getLocation()->ref()) == pendingMap.end()) pendingMap[startEvent->getLocation()->ref()] = pendingEvents();
-        if (pendingMap.find(endEvent->getLocation()->ref()) == pendingMap.end()) pendingMap[endEvent->getLocation()->ref()] = pendingEvents();
+        if (pendingP2PMap.find(startLoc) == pendingP2PMap.end()) pendingP2PMap[startLoc] = pendingP2PEvents();
+        if (pendingP2PMap.find(endLoc) == pendingP2PMap.end()) pendingP2PMap[endLoc] = pendingP2PEvents();
 
         // if(startLoc != endLoc){           
-        std::get<IDX_COMMUNICATIONS>(std::get<IDX_P2P_EVENTS>(pendingMap[startLoc])).push_back(item);
-        std::get<IDX_COMMUNICATIONS>(std::get<IDX_P2P_EVENTS>(pendingMap[endLoc])).push_back(item);
+        std::get<IDX_COMMUNICATIONS>(pendingP2PMap[startLoc]).push_back(item);
+        std::get<IDX_COMMUNICATIONS>(pendingP2PMap[endLoc]).push_back(item);
         // } else std::get<1>(pendingMap[startLoc]).push_back(item);
     }
 
     // Resort P2P communication by rank
-    for (auto &item : pendingMap) {
+    for (auto &item : pendingP2PMap) {
         auto locationKey = item.first;
-        auto &communications = std::get<IDX_COMMUNICATIONS>(std::get<IDX_P2P_EVENTS>(item.second));
+        auto &communications = std::get<IDX_COMMUNICATIONS>(item.second);
         std::sort(communications.begin(), communications.end(), 
                   [this, locationKey](Communication* a, Communication* b) {
                       return this->customP2PCommunicationCompare(a, b, locationKey);
@@ -322,54 +351,69 @@ void MpiAnalysisWindow::buildNodes(){
 
     //Pending collective communications
     for(auto &item: data->getFullTrace()->getCollectiveCommunications()){
-        auto typeIndex = getTypeIndex(item->getOperation());        
+        if(getTypeIndex(item->getOperation()) == IDX_OTHER) continue;          
         for(auto &member: item->getMembers()){
             auto memberLocation = member->getLocation()->ref();
-            if(pendingMap.find(memberLocation) == pendingMap.end()) pendingMap[memberLocation] = pendingEvents();               
-            auto pair = std::make_pair(item,member);
-            std::get<IDX_COMMUNICATIONS>(std::get<IDX_COLLECTIVES_EVENTS>(pendingMap[memberLocation]))[typeIndex].push_back(pair);
+            if(pendingCollectiveMap.find(memberLocation) == pendingCollectiveMap.end()) pendingCollectiveMap[memberLocation] = pendingCollectivesEvents();
+            std::get<IDX_COMMUNICATIONS>(pendingCollectiveMap[memberLocation]).push_back(item);
         }
     }
     
     //Adds communication to matching Node
-    for (auto &locationEntry : pendingMap) {     
-        auto &communications = std::get<IDX_COMMUNICATIONS>(std::get<IDX_P2P_EVENTS>(locationEntry.second));
-        auto &collectives = std::get<IDX_COMMUNICATIONS>(std::get<IDX_COLLECTIVES_EVENTS>(locationEntry.second));
-        
-        for (auto node : std::get<IDX_NODES>(std::get<IDX_P2P_EVENTS>(locationEntry.second))){
+    for (auto &locationEntry : pendingP2PMap) {     
+        auto &communications = std::get<IDX_COMMUNICATIONS>(locationEntry.second);
+        auto &nodes_ = std::get<IDX_NODES>(locationEntry.second);
+
+        bool sizeMatchP2P = (nodes_.size()==communications.size());
+
+        for (auto node : nodes_){
             auto slot = node->getSlot();
-            QString regionName = QString::fromStdString(slot->region->name().str());            
+            // QString regionName = QString::fromStdString(slot->region->name().str());     
 
             if(!communications.empty()){
+                // Less communication events than nodes, some communications seem unfinished.
+                if(!sizeMatchP2P){                   
+                    if(communications.front()->getStartEvent()->getLocation()->ref() == node->getLocation()){
+                         if(!timeMatching(communications.front()->getStartEvent(), *slot)) continue;
+                    } else if(!timeMatching(communications.front()->getEndEvent(), *slot)) continue;
+                }                
                 node->setCommunication(communications.front());
 
                 // Add connected Nodes
                 if(pendingNodesP2P.find(communications.front()) == pendingNodesP2P.end()) pendingNodesP2P[communications.front()] = node;
                 else {
-                    node->addConnectedNodes(pendingNodesP2P[communications.front()]);
-                    pendingNodesP2P[communications.front()]->addConnectedNodes(node);
+                    node->addConnectedNode(pendingNodesP2P[communications.front()]);
+                    pendingNodesP2P[communications.front()]->addConnectedNode(node);
                 }
                 communications.erase(communications.begin());
                 //if(QString::fromStdString(node->getSlot().region->name().str()).contains("sendrecv",Qt::CaseInsensitive)) communications.erase(communications.begin());
             }
         }
+    
+    }
 
-        for (auto node : std::get<IDX_NODES>(std::get<IDX_COLLECTIVES_EVENTS>(locationEntry.second))) {           
+    //Adds collective communication to matching Node
+    for (auto &locationEntry : pendingCollectiveMap){
+        for (auto node : std::get<IDX_NODES>(locationEntry.second)) {        
+            auto &collectives = std::get<IDX_COMMUNICATIONS>(locationEntry.second); 
+
             if(!collectives.empty()){
-                auto typeIndex = getTypeIndex(node->getSlot()->region->role());
-                node->setCollectiveCommunication(collectives[typeIndex].front().first);
-                node->setCollectiveCommunicationMemberRef(collectives[typeIndex].front().second);
-
-                if(pendingNodesCollectives.find(collectives[typeIndex].front().first) == pendingNodesCollectives.end()) pendingNodesCollectives[collectives[typeIndex].front().first] = node;
-                else {
-                    node->addConnectedNodes(pendingNodesCollectives[collectives[typeIndex].front().first]);
-                    pendingNodesCollectives[collectives[typeIndex].front().first]->addConnectedNodes(node);
-                }
-
-                collectives[typeIndex].erase(collectives[typeIndex].begin());
+                node->setCollectiveCommunication(collectives.front());
+                auto event = collectives.front();
+                // Pending member for connectedNodes
+                if(pendingNodesCollectives.find(event) == pendingNodesCollectives.end()) pendingNodesCollectives[event] = std::vector<Node*>();             
+                pendingNodesCollectives[event].push_back(node);               
+                collectives.erase(collectives.begin());
             }
         }
-               
+    }
+
+    // Add connectedNodes
+    for(auto &collectiveCommunication : pendingNodesCollectives) {
+        std::vector<Node*>& nodes = collectiveCommunication.second;
+        for(auto node : nodes){
+            node->addConnectedNode(nodes);
+        }
     }
 }
 
@@ -387,6 +431,17 @@ bool MpiAnalysisWindow::customP2PCommunicationCompare(Communication* a, Communic
     auto timeB = isStartEventBMatching ? startEventB->getStartTime() : EndEventB->getStartTime();
 
     return timeA < timeB;
+}
+
+bool MpiAnalysisWindow::timeMatching(const CommunicationEvent* event, Slot slot){
+    auto startTime = event->getStartTime();
+    auto endTime = event->getEndTime();
+
+    auto differenceStart = abs(event->getStartTime() - slot.startTime);
+    auto differenceEnd = abs(event->getEndTime() - slot.endTime);
+    std::chrono::nanoseconds threshold(500000);
+    if(differenceStart < threshold || differenceEnd < threshold) return true;
+    else return false;
 }
 
 size_t MpiAnalysisWindow::getTypeIndex(otf2::common::collective_type collectiveType){

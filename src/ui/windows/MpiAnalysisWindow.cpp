@@ -1,6 +1,6 @@
 /*
  * Marvelous OTF2 Traces Interactive Visualizer (MOTIV)
- * Copyright (C) 2023 Jessica Lafontaine
+ * Copyright (C) 2024 Jessica Lafontaine
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,7 +15,6 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
 
 #include <algorithm>
 #include <unordered_set>

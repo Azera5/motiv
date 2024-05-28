@@ -72,25 +72,26 @@ int main(int argc, char *argv[])
         filepath = positionalArguments.first();
     }
 
+    bool modeValidity = true;
+    int mode = parser.value(modeOption).toInt(&modeValidity); 
+
     // Test run without window display
 	if (parser.isSet(testrunOption)){     
 		testRun = true;
-        [[maybe_unused]] auto dummyWindow = new MainWindow(parser.value(testrunOption));
+        [[maybe_unused]] auto dummyMainWindow = new MpiAnalysisWindow(parser.value(testrunOption));
         app.quit();
         std::cout << "%application in general%" << appTimer.elapsed() << "%ms%";
         return EXIT_SUCCESS;
 	}
 
     RecentFilesDialog recentFilesDialog(&filepath);
-    bool modeValidity;
-    int mode = parser.value(modeOption).toInt(&modeValidity);
 
-    // ATTENTION: MODES CONTROLL MUST BE SWAPED!!! TEMPORARY WORKAROUNT (swap if commentary)
+    // Swap mode control to run Motiv in alternative mode by default
+    // Also, update mode ID in AppSettings.hpp 
     if((modeValidity || (!parser.isSet(modeOption))) && (!filepath.isEmpty() || recentFilesDialog.exec() == QDialog::Accepted)) {
-       // if((!parser.isSet(modeOption)) || mode == 0){
-        if (parser.isSet(modeOption) && mode == 1){
-            auto mainWindow = new MainWindow(filepath);
-            //std::string motivVersion = MOTIV_VERSION_STRING;
+        if((!parser.isSet(modeOption)) || mode == 0){
+        //  if (parser.isSet(modeOption) && mode == 1){           
+            auto mainWindow = new MainWindow(filepath);            
             QString fullTitle;
             QTextStream text(&fullTitle);
             text << "Motiv " MOTIV_VERSION_STRING;
@@ -98,10 +99,9 @@ int main(int argc, char *argv[])
             qInfo() << "motiv ready";
             mainWindow->show();
             }
-        if((!parser.isSet(modeOption)) || mode == 0){ 
-       // if (parser.isSet(modeOption) && mode == 1){
-            auto mainWindow = new MpiAnalysisWindow(filepath);
-            //std::string motivVersion = MOTIV_VERSION_STRING;
+        //if((!parser.isSet(modeOption)) || mode == 0){ 
+        if (parser.isSet(modeOption) && mode == 1){         
+            auto mainWindow = new MpiAnalysisWindow(filepath);            
             QString fullTitle;
             QTextStream text(&fullTitle);
             text << "Motiv " MOTIV_VERSION_STRING;

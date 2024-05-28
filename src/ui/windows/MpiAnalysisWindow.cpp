@@ -77,8 +77,7 @@ void MpiAnalysisWindow::createMenus(){
     if (AppSettings::getInstance().recentlyOpenedFiles().isEmpty()) {
         auto emptyAction = openRecentMenu->addAction(tr("&(Empty)"));
         emptyAction->setEnabled(false);
-    } else {
-        // TODO this is not updated on call to clear
+    } else {        
         for (const auto &recent: AppSettings::getInstance().recentlyOpenedFiles()) {
             auto recentAction = new QAction(recent, openRecentMenu);
             openRecentMenu->addAction(recentAction);
@@ -252,10 +251,7 @@ constexpr size_t IDX_OTHER = 4;
 void MpiAnalysisWindow::buildNodes(){
 
     // Pending Events: Connects Slots with corresponding CommunicationEvents (P2P or collective communication).
-    using pendingP2PEvents =  std::tuple<std::vector<Node*>, std::vector<Communication*>>;
-    // using pendingCollectivesEvents =  std::tuple<std::vector<Node*>, std::map<uint64_t, std::vector<std::pair<CollectiveCommunicationEvent*, CollectiveCommunicationEvent::Member*>>>>;
-    // using pendingCollectivesEvents =  std::tuple<std::vector<Node*>, std::vector<std::pair<CollectiveCommunicationEvent*, CollectiveCommunicationEvent::Member*>>>;
-    
+    using pendingP2PEvents =  std::tuple<std::vector<Node*>, std::vector<Communication*>>;    
     using pendingCollectivesEvents =  std::tuple<std::vector<Node*>, std::vector<CollectiveCommunicationEvent*>>;
 
     std::map<uint16_t, pendingP2PEvents> pendingP2PMap;
@@ -386,7 +382,7 @@ void MpiAnalysisWindow::buildNodes(){
                     pendingNodesP2P[communications.front()]->addConnectedNode(node);
                 }
                 communications.erase(communications.begin());
-                //if(QString::fromStdString(node->getSlot().region->name().str()).contains("sendrecv",Qt::CaseInsensitive)) communications.erase(communications.begin());
+                if(QString::fromStdString(node->getSlot()->region->name().str()).contains("sendrecv",Qt::CaseInsensitive)) communications.erase(communications.begin());
             }
         }
     

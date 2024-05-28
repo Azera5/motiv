@@ -22,10 +22,11 @@
 #include <QSettings>
 #include <QString>
 
-// ATTENTION: MODES MUST BE SWAPED!!! TEMPORARY WORKAROUNT
+// Swap mode ID to run Motiv in alternative mode by default. 
+// Also, update mode control in main.cpp.
 enum Mode{
-    Default = 1,
-    MPI_Analysis = 0
+    Default = 0,
+    MPI_Analysis = 1
 };
 
 

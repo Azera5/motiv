@@ -6,6 +6,8 @@
 #include "src/ui/views/CommunicationIndicator.hpp"
 #include "src/ui/views/NodeIndicator.hpp"
 
+//DEBUG INCLUDE
+#include <iomanip>
 constexpr int X_OFFSET = 50;
 constexpr int Y_OFFSET = 80;
 constexpr int RADIUS = 15;
@@ -61,8 +63,8 @@ void LogicalClock::populateScene(QGraphicsScene* scene) {
 
     // Map contains x-axis offset(first) and vector index(second) by location
     std::map<uint64_t, std::pair<int,int>> nodeCountMap;        
-       
-    std::map<const Communication*, std::tuple<int, int>> pendingEdges; 
+    // Tupel: (x, y, count)   
+    std::map<const Communication*, std::tuple<int, int, int>> pendingEdges; 
     std::map<const CollectiveCommunicationEvent*, std::tuple<int, int, int, uint64_t, std::set<uint16_t>>> pendingCollectives;
     
     drawNodes(nodes_, nodeCountMap, pendingEdges, pendingCollectives, scene);
@@ -97,7 +99,7 @@ void LogicalClock::populateScene(QGraphicsScene* scene) {
 
 void LogicalClock::drawNodes(std::map<uint64_t, std::vector<std::pair<Node*, bool>>>& nodes_,
     std::map<uint64_t, std::pair<int,int>>& nodeCountMap,
-    std::map<const Communication*, std::tuple<int, int>>& pendingEdges,
+    std::map<const Communication*, std::tuple<int, int, int>>& pendingEdges,
     std::map<const CollectiveCommunicationEvent*, std::tuple<int, int, int, uint64_t, std::set<uint16_t>>>& pendingCollectives,
     QGraphicsScene* scene,
     uint64_t location_,
@@ -138,9 +140,21 @@ void LogicalClock::drawNodes(std::map<uint64_t, std::vector<std::pair<Node*, boo
             
             // Node is P2P communication
             if(node->hasCommunication()){
-                
+                /* DEBUG INFO DELETE
+                auto commStartTime = std::chrono::duration<double>(node->getOwnEvent()->getStartTime()).count();                
+                auto commEndTime = std::chrono::duration<double>(node->getOwnEvent()->getEndTime()).count(); 
+                auto slotStartTime = std::chrono::duration<double>(node->getSlot()->getStartTime()).count();
+                auto slotEndTime =  std::chrono::duration<double>(node->getSlot()->getEndTime()).count();               
+               
+                std::cout << location << " " << node->getRegionName().str() << "     ";
+                    std::cout << std::fixed << std::setprecision(6) << slotStartTime << "     ";
+                    std::cout << std::fixed << std::setprecision(6) << slotEndTime << "     ";
+                    std::cout << std::fixed << std::setprecision(6) << commStartTime << "     ";
+                    std::cout << std::fixed << std::setprecision(6) << commEndTime <<  std::endl;             
+                */
+               
                 // Set node color
-                if(region.contains("send", Qt::CaseInsensitive)) color = SEND_COLOR;
+                if(region.contains("send", Qt::CaseInsensitive)) color = SEND_COLOR;               
                 else color = RECV_COLOR; 
 
                 // Preparing offset for node
@@ -153,10 +167,11 @@ void LogicalClock::drawNodes(std::map<uint64_t, std::vector<std::pair<Node*, boo
                 
                 if(pendingEdges.find(node->getCommunication()) == pendingEdges.end()){
                     // Blocking communication needs a specific x-axis-offset
-                    if(node->getCommunicationKind() & CommunicationKind::BlockingPointToPoint) {                       
+                    if(node->getCommunicationKind() & CommunicationKind::BlockingPointToPoint) {
                         // node define offset because is start event
-                        if(node->getOwnEvent() == node->getCommunication()->getStartEvent()) { 
-                            nodeCountMap[connectedNodeRank].first = std::max(nodeCountMap[connectedNodeRank].first, (count+1));
+                        if(node->getOwnEvent() == node->getCommunication()->getStartEvent()) {
+                            // nodeCountMap[connectedNodeRank].first = std::max(nodeCountMap[connectedNodeRank].first, (count+1));
+                            pendingEdges[node->getCommunication()] = std::make_tuple(x, y, std::max(nodeCountMap[connectedNodeRank].first, (count+1)));
                         }                        
                         // Node has to wait for offset from connected node
                         else{
@@ -173,12 +188,19 @@ void LogicalClock::drawNodes(std::map<uint64_t, std::vector<std::pair<Node*, boo
                         x = (count * X_OFFSET) - RADIUS;
                     }
                     
-                    if(pendingEdges.find(node->getCommunication()) == pendingEdges.end()) pendingEdges[node->getCommunication()] = std::make_tuple(x, y);
-                    // if(region.contains("send",Qt::CaseInsensitive)) nodeCountMap[connectedNodeRank].first = std::max(nodeCountMap[connectedNodeRank].first, (count+1));
+                    if(pendingEdges.find(node->getCommunication()) == pendingEdges.end()) pendingEdges[node->getCommunication()] = std::make_tuple(x, y, std::max(nodeCountMap[connectedNodeRank].first, (count+1)));
                 }
 
-                // Preparing coordinates for edges                
+                // Preparing coordinates for edges             
                 // if(node->getOwnEvent() == node->getCommunication()->getEndEvent() && !(nodeFinishState)){
+                
+                // Calculate Offset for Blocking-Endevent
+                if(node->getCommunicationKind() & CommunicationKind::BlockingPointToPoint) {                       
+                    if(node->getOwnEvent() == node->getCommunication()->getEndEvent()) {
+                        count = std::max(count, std::get<2>(pendingEdges[node->getCommunication()]));
+                    }
+                }
+
                 uint64_t pendingY = std::get<1>(pendingEdges[node->getCommunication()]);
                 uint64_t pendingLocation = (pendingY + RADIUS)/Y_OFFSET;
                 if(pendingLocation != location || connectedNodeRank == location){

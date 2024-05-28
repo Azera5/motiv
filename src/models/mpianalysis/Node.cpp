@@ -66,13 +66,13 @@ const CollectiveCommunicationEvent* Node::getCollectiveCommunication(){
 }
 
 CommunicationKind Node::getCommunicationKind(){
-    if(this->hasCommunication()) return this->communication->getStartEvent()->getKind();
+    if(this->hasCommunication()) return this->getOwnEvent()->getKind();
     else if(this->hasCollectiveCommunication()) return this->collectiveCommunication->getKind();
     else throw std::runtime_error("No communication present");
 }
 
 std::map<uint64_t, std::vector<Node*>>& Node::getConnectedNodes(){
-    if(!connectedNodes.empty()) return connectedNodes;
+    if(!connectedNodes.empty()) return connectedNodes;    
     else throw std::runtime_error("connectedNodes vector is empty");
 }
 

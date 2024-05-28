@@ -30,7 +30,7 @@ private: //methods
     void populateScene(QGraphicsScene *element);
     void drawNodes( std::map<uint64_t, std::vector<std::pair<Node*, bool>>>& nodes_, 
         std::map<uint64_t, std::pair<int,int>>& nodeCountMap,
-        std::map<const Communication*, std::tuple<int, int>>& pendingEdges,
+        std::map<const Communication*, std::tuple<int, int, int>>& pendingEdges,
         std::map<const CollectiveCommunicationEvent*, std::tuple<int, int, int, uint64_t, std::set<uint16_t>>>& pendingCollectives,
         QGraphicsScene* scene,        
         uint64_t location_ = 0,
